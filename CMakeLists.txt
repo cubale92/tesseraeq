@@ -32,9 +32,9 @@ set(TESSERA_SOURCES
     Source/UI/TesseraLookAndFeel.cpp)
 
 juce_add_plugin(TesseraEQ
-    COMPANY_NAME "davcee8"
-    BUNDLE_ID "com.davcee8.tesseraeq"
-    PLUGIN_MANUFACTURER_CODE Dvc8
+    COMPANY_NAME "8cee"
+    BUNDLE_ID "com.8cee.tesseraeq"
+    PLUGIN_MANUFACTURER_CODE Ecee
     PLUGIN_CODE Tsq1
     FORMATS ${TESSERA_FORMATS}
     PRODUCT_NAME "Tessera EQ"
