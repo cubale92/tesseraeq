@@ -19,50 +19,78 @@ Matrix2 responseMatrixAt (const BandSnapshot& bands, double freqHz, double sampl
 LinearPhaseEngine::LinearPhaseEngine (SnapshotProvider p)
     : juce::Thread ("Tessera linear-phase designer"), provider (std::move (p))
 {
-    for (auto& c : convs)
-        c = std::make_unique<juce::dsp::Convolution> (juce::dsp::Convolution::NonUniform { 1024 }, queue);
+    // Started here (message thread), never from the audio thread. It idles while inactive.
+    startThread (juce::Thread::Priority::low);
 }
 
 LinearPhaseEngine::~LinearPhaseEngine()
 {
-    stopThread (2000);
+    signalThreadShouldExit();
+    notify();
+    stopThread (4000);
 }
 
-void LinearPhaseEngine::prepare (double sr, int maxBlockSize, int channels)
+void LinearPhaseEngine::prepare (double sr, int /*maxBlockSize*/, int channels)
 {
+    prepared = false;
+    const juce::SpinLock::ScopedLockType lock (handoffLock);
+
     sampleRate = sr;
-    maxBlock = juce::jmax (1, maxBlockSize);
     numChannels = juce::jlimit (1, 2, channels);
+    const int rateFactor = sr > 100000.0 ? 4 : (sr > 50000.0 ? 2 : 1);
+    blockSize = 512 * rateFactor;
+    bins = blockSize + 1;
+    maxPartitions = firLengthFor (3, sr) / blockSize;
+    crossfadeLength = blockSize * 2;
+
+    fft = std::make_unique<juce::dsp::FFT> (juce::roundToInt (std::log2 (2.0 * blockSize)));
+    fftWork.assign ((size_t) (4 * blockSize), 0.0f);
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        fdl[(size_t) ch].assign ((size_t) (maxPartitions * bins), Complex());
+        inFifo[(size_t) ch].assign ((size_t) blockSize, 0.0f);
+        outFifo[(size_t) ch].assign ((size_t) blockSize, 0.0f);
+        prevInput[(size_t) ch].assign ((size_t) blockSize, 0.0f);
+        accCur[(size_t) ch].assign ((size_t) bins, Complex());
+        accOld[(size_t) ch].assign ((size_t) bins, Complex());
+        blockOutCur[(size_t) ch].assign ((size_t) blockSize, 0.0f);
+        blockOutOld[(size_t) ch].assign ((size_t) blockSize, 0.0f);
+    }
+    fdlPos = 0;
+    fifoPos = 0;
+
+    // filter sets built for another rate/layout are useless now
+    current.reset(); previous.reset(); pending.reset();
+    for (auto& r : retired) r.reset();
+    ++generation;
+    installedLength = 0;
+    crossfadePos = 0;
+
     designSampleRate = sr;
     designChannels = numChannels;
-
-    juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlock, 1 };
-    for (auto& c : convs)
-        c->prepare (spec);
-
-    inCopy.setSize (2, maxBlock, false, false, true);
-    scratch.setSize (1, maxBlock, false, false, true);
-
-    prepared = true;
     forceRedesign = true;
+    prepared = true;
+    notify();
 }
 
-void LinearPhaseEngine::reset()
+void LinearPhaseEngine::reset() noexcept
 {
-    for (auto& c : convs)
-        c->reset();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        std::fill (fdl[(size_t) ch].begin(), fdl[(size_t) ch].end(), Complex());
+        std::fill (inFifo[(size_t) ch].begin(), inFifo[(size_t) ch].end(), 0.0f);
+        std::fill (outFifo[(size_t) ch].begin(), outFifo[(size_t) ch].end(), 0.0f);
+        std::fill (prevInput[(size_t) ch].begin(), prevInput[(size_t) ch].end(), 0.0f);
+    }
+    fifoPos = 0;
 }
 
-void LinearPhaseEngine::setActive (bool shouldBeActive)
+void LinearPhaseEngine::setActive (bool shouldBeActive) noexcept
 {
-    if (active.exchange (shouldBeActive) == shouldBeActive)
-        return;
-
-    if (shouldBeActive)
+    if (active.exchange (shouldBeActive) != shouldBeActive && shouldBeActive)
     {
         forceRedesign = true;
-        if (! isThreadRunning())
-            startThread (juce::Thread::Priority::low);
         notify();
     }
 }
@@ -79,64 +107,248 @@ bool LinearPhaseEngine::waitForFirstDesign (int timeoutMs)
     return true;
 }
 
-void LinearPhaseEngine::installPendingIfAny() noexcept
+//==============================================================================
+bool LinearPhaseEngine::retire (std::unique_ptr<FilterSet>& p) noexcept
 {
-    const juce::SpinLock::ScopedTryLockType lock (pendingLock);
-    if (! lock.isLocked() || ! hasPending)
+    if (p == nullptr)
+        return true;
+    for (auto& slot : retired)
+        if (slot == nullptr) { slot = std::move (p); return true; }
+    return false;
+}
+
+void LinearPhaseEngine::tryInstallPending() noexcept
+{
+    const bool hard = hardSwapRequested.load();
+    if (previous != nullptr && ! hard)
+        return; // still crossfading
+
+    const juce::SpinLock::ScopedTryLockType lock (handoffLock);
+    if (! lock.isLocked() || pending == nullptr)
         return;
 
-    for (int i = 0; i < 4; ++i)
-        convs[(size_t) i]->loadImpulseResponse (std::move (pending[(size_t) i]), sampleRate,
-                                                juce::dsp::Convolution::Stereo::no,
-                                                juce::dsp::Convolution::Trim::no,
-                                                juce::dsp::Convolution::Normalise::no);
-    loadedLength = pendingLength;
-    hasPending = false;
-    ++installsCompleted;
+    int freeSlots = 0;
+    for (auto& slot : retired)
+        freeSlots += slot == nullptr ? 1 : 0;
+
+    // A set designed for a different configuration (before a re-prepare) is useless.
+    if (pending->generation != generation.load() || pending->block != blockSize)
+    {
+        if (retire (pending)) forceRedesign = true;
+        return;
+    }
+
+    if (hard || current == nullptr)
+    {
+        if (freeSlots < 2) return;
+        retire (previous);
+        retire (current);
+        current = std::move (pending);
+        hardSwapRequested = false;
+    }
+    else
+    {
+        previous = std::move (current);
+        current = std::move (pending);
+    }
+    crossfadePos = 0;
+    installedLength = current->length;
+}
+
+void LinearPhaseEngine::accumulate (const FilterSet& set, int path, int inputChannel, Complex* acc) const noexcept
+{
+    const auto& h = set.parts[(size_t) path];
+    const auto& x = fdl[(size_t) inputChannel];
+    for (int p = 0; p < set.numPartitions; ++p)
+    {
+        int slot = fdlPos - p;
+        if (slot < 0) slot += maxPartitions;
+        const Complex* xs = x.data() + (size_t) slot * (size_t) bins;
+        const Complex* hs = h.data() + (size_t) p * (size_t) bins;
+        for (int k = 0; k < bins; ++k)
+            acc[k] += xs[k] * hs[k];
+    }
+}
+
+void LinearPhaseEngine::processPartitionBlock() noexcept
+{
+    const int B = blockSize;
+
+    // 1. transform the newest input frame [previous B | current B] into the delay line
+    fdlPos = (fdlPos + 1) % maxPartitions;
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float* w = fftWork.data();
+        std::copy (prevInput[(size_t) ch].begin(), prevInput[(size_t) ch].end(), w);
+        std::copy (inFifo[(size_t) ch].begin(), inFifo[(size_t) ch].end(), w + B);
+        std::fill (w + 2 * B, w + 4 * B, 0.0f);
+        fft->performRealOnlyForwardTransform (w, true);
+        auto* dst = fdl[(size_t) ch].data() + (size_t) fdlPos * (size_t) bins;
+        std::copy (w, w + 2 * bins, reinterpret_cast<float*> (dst));
+        std::copy (inFifo[(size_t) ch].begin(), inFifo[(size_t) ch].end(), prevInput[(size_t) ch].begin());
+    }
+
+    auto render = [&] (const FilterSet* set, std::array<std::vector<Complex>, 2>& acc, std::array<std::vector<float>, 2>& out)
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            auto* a = acc[(size_t) ch].data();
+            std::fill (a, a + bins, Complex());
+            if (set != nullptr)
+            {
+                if (numChannels == 1)
+                    accumulate (*set, 0, 0, a);
+                else if (ch == 0) { accumulate (*set, 0, 0, a); accumulate (*set, 1, 1, a); } // L = a*L + b*R
+                else              { accumulate (*set, 2, 0, a); accumulate (*set, 3, 1, a); } // R = c*L + d*R
+            }
+            float* w = fftWork.data();
+            std::copy (reinterpret_cast<const float*> (a), reinterpret_cast<const float*> (a) + 2 * bins, w);
+            std::fill (w + 2 * bins, w + 4 * B, 0.0f);
+            fft->performRealOnlyInverseTransform (w);
+            std::copy (w + B, w + 2 * B, out[(size_t) ch].begin()); // overlap-save: keep the second half
+        }
+    };
+
+    render (current.get(), accCur, blockOutCur);
+
+    if (previous != nullptr)
+    {
+        render (previous.get(), accOld, blockOutOld);
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            auto& o = outFifo[(size_t) ch];
+            for (int i = 0; i < B; ++i)
+            {
+                const float t = juce::jmin (1.0f, (float) (crossfadePos + i) / (float) crossfadeLength);
+                o[(size_t) i] = blockOutOld[(size_t) ch][(size_t) i] * (1.0f - t) + blockOutCur[(size_t) ch][(size_t) i] * t;
+            }
+        }
+        crossfadePos += B;
+        if (crossfadePos >= crossfadeLength)
+        {
+            const juce::SpinLock::ScopedTryLockType lock (handoffLock);
+            if (lock.isLocked())
+                retire (previous);  // if no slot is free we simply try again next block (t is already 1)
+        }
+    }
+    else
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+            std::copy (blockOutCur[(size_t) ch].begin(), blockOutCur[(size_t) ch].end(), outFifo[(size_t) ch].begin());
+    }
 }
 
 void LinearPhaseEngine::process (juce::AudioBuffer<float>& buffer, int numSamples) noexcept
 {
-    if (! prepared)
+    if (! prepared.load())
         return;
 
-    installPendingIfAny();
+    tryInstallPending();
 
     const int chans = juce::jmin (buffer.getNumChannels(), numChannels);
+    float* data[2] { buffer.getWritePointer (0), chans > 1 ? buffer.getWritePointer (1) : nullptr };
 
-    for (int pos = 0; pos < numSamples; pos += maxBlock)
+    for (int i = 0; i < numSamples; ++i)
     {
-        const int n = juce::jmin (maxBlock, numSamples - pos);
-
         for (int ch = 0; ch < chans; ++ch)
-            inCopy.copyFrom (ch, 0, buffer, ch, pos, n);
-
-        auto runConv = [&] (int convIndex, int srcChannel, int dstChannel, bool add)
         {
-            juce::dsp::AudioBlock<const float> in (inCopy.getArrayOfReadPointers() + srcChannel, 1, (size_t) n);
-            juce::dsp::AudioBlock<float> out (scratch.getArrayOfWritePointers(), 1, (size_t) n);
-            juce::dsp::ProcessContextNonReplacing<float> ctx (in, out);
-            convs[(size_t) convIndex]->process (ctx);
-
-            if (add) buffer.addFrom  (dstChannel, pos, scratch, 0, 0, n);
-            else     buffer.copyFrom (dstChannel, pos, scratch, 0, 0, n);
-        };
-
-        if (chans == 1)
-        {
-            runConv (0, 0, 0, false);
+            inFifo[(size_t) ch][(size_t) fifoPos] = data[ch][i];
+            data[ch][i] = outFifo[(size_t) ch][(size_t) fifoPos];
         }
-        else
+        if (++fifoPos == blockSize)
         {
-            runConv (0, 0, 0, false); // L -> L
-            runConv (1, 1, 0, true);  // R -> L
-            runConv (2, 0, 1, false); // L -> R
-            runConv (3, 1, 1, true);  // R -> R
+            fifoPos = 0;
+            processPartitionBlock();
+            if (previous == nullptr || hardSwapRequested.load())
+                tryInstallPending();
         }
     }
 }
 
 //==============================================================================
+std::unique_ptr<LinearPhaseEngine::FilterSet>
+LinearPhaseEngine::buildFilterSet (const BandSnapshot& snap, double sr, int chans, int n) const
+{
+    std::array<juce::AudioBuffer<float>, 4> irs;
+    designIRs (snap, sr, chans, n, irs);
+
+    const int B = blockSize;   // read once: prepare() may change it concurrently (the set is then
+    const int nb = B + 1;      // rejected at install by its generation/block tag)
+    auto set = std::make_unique<FilterSet>();
+    set->length = n;
+    set->block = B;
+    set->numPartitions = n / B;
+
+    juce::dsp::FFT f (juce::roundToInt (std::log2 (2.0 * B)));
+    std::vector<float> w ((size_t) (4 * B));
+    for (int path = 0; path < 4; ++path)
+    {
+        auto& parts = set->parts[(size_t) path];
+        parts.assign ((size_t) (set->numPartitions * nb), Complex());
+        if (chans == 1 && path > 0)
+            continue;
+        const float* h = irs[(size_t) path].getReadPointer (0);
+        for (int p = 0; p < set->numPartitions; ++p)
+        {
+            std::fill (w.begin(), w.end(), 0.0f);
+            std::copy (h + p * B, h + (p + 1) * B, w.begin()); // segment, zero-padded to 2B
+            f.performRealOnlyForwardTransform (w.data(), true);
+            std::copy (w.data(), w.data() + 2 * nb, reinterpret_cast<float*> (parts.data() + (size_t) p * (size_t) nb));
+        }
+    }
+    return set;
+}
+
+void LinearPhaseEngine::run()
+{
+    BandSnapshot last {};
+    int lastLength = -1;
+    double lastRate = 0.0;
+    int lastChannels = 0;
+    BandSnapshot snap {};
+
+    while (! threadShouldExit())
+    {
+        // free whatever the audio thread has retired
+        std::array<std::unique_ptr<FilterSet>, 3> toFree;
+        {
+            const juce::SpinLock::ScopedLockType lock (handoffLock);
+            for (size_t i = 0; i < retired.size(); ++i)
+                toFree[i] = std::move (retired[i]);
+        }
+        for (auto& f : toFree)
+            f.reset();
+
+        if (active.load() && prepared.load())
+        {
+            int quality = 1;
+            provider (snap, quality);
+            const int gen = generation.load();
+            const double sr = designSampleRate.load();
+            const int chans = designChannels.load();
+            const int n = juce::jmin (firLengthFor (quality, sr), maxPartitions * blockSize);
+
+            const bool changed = forceRedesign.exchange (false) || n != lastLength || ! juce::exactlyEqual (sr, lastRate)
+                              || chans != lastChannels || snap != last;
+            if (changed)
+            {
+                auto set = buildFilterSet (snap, sr, chans, n);
+                set->generation = gen;
+                std::unique_ptr<FilterSet> stale;
+                {
+                    const juce::SpinLock::ScopedLockType lock (handoffLock);
+                    stale = std::move (pending);    // a newer design supersedes one not yet installed
+                    pending = std::move (set);
+                }
+                stale.reset();
+                last = snap; lastLength = n; lastRate = sr; lastChannels = chans;
+                ++designsCompleted;
+            }
+        }
+        wait (active.load() ? 15 : 200);
+    }
+}
+
 void LinearPhaseEngine::designIRs (const BandSnapshot& bands, double sr, int channels, int n,
                                    std::array<juce::AudioBuffer<float>, 4>& out)
 {
@@ -194,47 +406,6 @@ void LinearPhaseEngine::designIRs (const BandSnapshot& bands, double sr, int cha
         auto* dst = out[(size_t) i].getWritePointer (0);
         for (int t = 0; t < n; ++t)
             dst[t] = s[(size_t) t] * window[(size_t) t];
-    }
-}
-
-void LinearPhaseEngine::run()
-{
-    BandSnapshot last {};
-    int lastLength = -1;
-    double lastRate = 0.0;
-    int lastChannels = 0;
-    BandSnapshot snap {};
-
-    while (! threadShouldExit())
-    {
-        if (active.load() && prepared.load())
-        {
-            int quality = 1;
-            provider (snap, quality);
-            const double sr = designSampleRate.load();
-            const int chans = designChannels.load();
-            const int n = firLengthFor (quality, sr);
-
-            const bool changed = forceRedesign.exchange (false) || n != lastLength || ! juce::exactlyEqual (sr, lastRate)
-                              || chans != lastChannels || snap != last;
-            if (changed)
-            {
-                std::array<juce::AudioBuffer<float>, 4> irs;
-                designIRs (snap, sr, chans, n, irs);
-
-                {
-                    const juce::SpinLock::ScopedLockType lock (pendingLock);
-                    for (int i = 0; i < 4; ++i)
-                        pending[(size_t) i] = std::move (irs[(size_t) i]);
-                    pendingLength = n;
-                    hasPending = true;
-                }
-                // whatever is left in irs (moved-from or previously pending) is freed here, off the audio thread
-                last = snap; lastLength = n; lastRate = sr; lastChannels = chans;
-                ++designsCompleted;
-            }
-        }
-        wait (active.load() ? 25 : 200);
     }
 }
 } // namespace tessera

@@ -70,8 +70,22 @@ void TesseraProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     outputGain.reset (sampleRate, 0.03);
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outputParam->load()));
 
-    lastPhaseMode = -1;
+    bypassDelay.setSize (2, 262144, false, true, true);
+    bypassWrite = 0;
+
     lastReportedLatency = -1;
+    activePhase = activeQuality = -1;
+    transition = Transition::running;
+    transitionGain = 1.0f;
+    switchMode ((int) phaseParam->load(), (int) qualityParam->load());
+    if (activePhase == LinearPhase)
+    {
+        transition = Transition::waiting;   // stay silent until the FIR is designed and primed
+        transitionGain = 0.0f;
+    }
+    // Report the latency up front so the host can compensate before playback starts.
+    lastReportedLatency = activePhase == LinearPhase ? linear.latencyForLength (firLengthFor (activeQuality, sampleRate)) : 0;
+    setLatencySamples (lastReportedLatency);
 }
 
 void TesseraProcessor::snapshotBands (BandSnapshot& out) const noexcept
@@ -214,22 +228,33 @@ void TesseraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const int numSamples = buffer.getNumSamples();
     const double sr = getCurrentSampleRate();
 
-    const int phase = (int) phaseParam->load();
-    if (phase != lastPhaseMode)
+    // --- phase-mode / quality transitions --------------------------------------
     {
-        for (auto& rt : runtime)
+        const int wantPhase = (int) phaseParam->load();
+        const int wantQuality = (int) qualityParam->load();
+        const bool differs = wantPhase != activePhase || (wantPhase == LinearPhase && wantQuality != activeQuality);
+        if (differs && (transition == Transition::running || transition == Transition::fadingIn))
+            transition = Transition::fadingOut;
+        if (transition == Transition::fadingOut && transitionGain <= 0.0f)
         {
-            rt.clearState();
-            rt.appliedType = rt.detType = rt.dynAppliedType = -1;
+            switchMode (wantPhase, wantQuality);
+            transition = Transition::waiting;
         }
-        linear.setActive (phase == LinearPhase);
-        linear.reset();
-        detDelay.clear();
-        detDelayWrite = 0;
-        lastPhaseMode = phase;
+        if (transition == Transition::waiting)
+        {
+            if (waitingForFilters && linear.getInstalledLength() == firLengthFor (activeQuality, sr))
+                waitingForFilters = false;
+            if (! waitingForFilters)
+            {
+                waitSamples -= numSamples;
+                if (waitSamples <= 0)
+                    transition = Transition::fadingIn;
+            }
+        }
     }
+    const int phase = activePhase;
 
-    const int latency = phase == LinearPhase ? firLengthFor ((int) qualityParam->load(), sr) / 2 : 0;
+    const int latency = phase == LinearPhase ? linear.latencyForLength (firLengthFor (activeQuality, sr)) : 0;
     if (latency != lastReportedLatency)
     {
         setLatencySamples (latency);
@@ -375,6 +400,8 @@ void TesseraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
 
+        applyTransitionGain (chans, numChans, chunk);
+
         // --- output gain, meters, analyser (post) ---------------------------------
         outputGain.setTargetValue (juce::Decibels::decibelsToGain (outputParam->load()));
         if (outputGain.isSmoothing() || std::abs (outputGain.getCurrentValue() - 1.0f) > 1.0e-6f)
@@ -404,6 +431,80 @@ void TesseraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
         postFifo.push (analyserScratch.data(), chunk);
     }
+}
+
+void TesseraProcessor::switchMode (int phase, int quality) noexcept
+{
+    for (auto& rt : runtime)
+    {
+        rt.clearState();
+        rt.appliedType = rt.detType = rt.dynAppliedType = -1;
+    }
+    detDelay.clear();
+    detDelayWrite = 0;
+
+    const bool linearNow = phase == LinearPhase;
+    const double sr = getCurrentSampleRate();
+    if (linearNow)
+    {
+        // Coming from minimum phase the FIR history is empty: wait one full filter length.
+        if (activePhase != LinearPhase)
+            linear.reset();
+        linear.requestHardSwap();
+        linear.invalidate();
+        waitingForFilters = true;
+        waitSamples = activePhase != LinearPhase ? firLengthFor (quality, sr) + linear.getBlockSize() : linear.getBlockSize();
+    }
+    else
+    {
+        waitingForFilters = false;
+        waitSamples = 0;
+    }
+    linear.setActive (linearNow);
+    activePhase = phase;
+    activeQuality = quality;
+}
+
+void TesseraProcessor::applyTransitionGain (float* const* chans, int numChans, int num) noexcept
+{
+    if (transition == Transition::running)
+        return;
+
+    const float step = 1.0f / (float) (0.015 * getCurrentSampleRate()); // 15 ms fades
+    for (int i = 0; i < num; ++i)
+    {
+        if (transition == Transition::fadingOut)      transitionGain = juce::jmax (0.0f, transitionGain - step);
+        else if (transition == Transition::fadingIn)  transitionGain = juce::jmin (1.0f, transitionGain + step);
+        else                                          transitionGain = 0.0f;
+        for (int ch = 0; ch < numChans; ++ch)
+            chans[ch][i] *= transitionGain;
+    }
+    if (transition == Transition::fadingIn && transitionGain >= 1.0f)
+        transition = Transition::running;
+}
+
+void TesseraProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    // Delay the dry signal by our reported latency so bypassing doesn't shift the track in time.
+    const int latency = lastReportedLatency > 0 ? lastReportedLatency : 0;
+    const int chans = juce::jmin (2, buffer.getNumChannels());
+    const int len = bypassDelay.getNumSamples();
+    if (latency == 0 || len == 0)
+        return;
+
+    int w = bypassWrite;
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        int r = w - latency; if (r < 0) r += len;
+        for (int ch = 0; ch < chans; ++ch)
+        {
+            auto* ring = bypassDelay.getWritePointer (ch);
+            ring[w] = buffer.getSample (ch, i);
+            buffer.setSample (ch, i, ring[r]);
+        }
+        if (++w == len) w = 0;
+    }
+    bypassWrite = w;
 }
 
 //==============================================================================

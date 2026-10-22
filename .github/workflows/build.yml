@@ -7,7 +7,7 @@ on:
 
 jobs:
   test-linux:
-    name: Tests (Linux)
+    name: Tests + pluginval (Linux)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -15,31 +15,49 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+            libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb unzip
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build --target TesseraTests
+        run: cmake --build build
       - name: Run tests
         run: xvfb-run -a ./build/TesseraTests_artefacts/Release/TesseraTests
+      - name: pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip
+          unzip -q pluginval.zip && chmod +x pluginval
+          xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process "build/TesseraEQ_artefacts/Release/VST3/Tessera EQ.vst3"
 
   build-windows:
-    name: VST3 (Windows x64)
+    name: VST3 + tests + pluginval (Windows x64)
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DTESSERA_BUILD_TESTS=OFF
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
       - name: Build
-        run: cmake --build build --config Release --target TesseraEQ_VST3 --parallel
+        run: cmake --build build --config Release --parallel
+      - name: Run tests
+        run: '& "build/TesseraTests_artefacts/Release/TesseraTests.exe" "$env:RUNNER_TEMP\tessera-windows.png"'
+      - name: pluginval
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pv
+          & ".\pv\pluginval.exe" --strictness-level 10 --validate-in-process "build\TesseraEQ_artefacts\Release\VST3\Tessera EQ.vst3"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: TesseraEQ-VST3-Windows
           path: build/TesseraEQ_artefacts/Release/VST3/
+      - name: Upload editor screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-screenshot-windows
+          path: ${{ runner.temp }}/tessera-windows.png
 
   build-macos:
-    name: VST3 + AU (macOS universal)
+    name: VST3 + AU + pluginval (macOS universal)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +68,11 @@ jobs:
           -DTESSERA_FORMATS="VST3;AU"
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --validate-in-process "build/TesseraEQ_artefacts/Release/VST3/Tessera EQ.vst3"
       - name: Upload plugins
         uses: actions/upload-artifact@v4
         with:

@@ -191,10 +191,10 @@ int main (int argc, char** argv)
 
         juce::AudioBuffer<float> warm (2, 512); juce::MidiBuffer midi;
         warm.clear();
-        proc.processBlock (warm, midi); // activates engine
+        for (int k = 0; k < 6; ++k) proc.processBlock (warm, midi); // fade out, switch, activate engine
         check (proc.waitForLinearPhaseReady (5000), "linear-phase filters designed");
         juce::Thread::sleep (100);
-        check (proc.getLatencySamples() == 4096, "latency = " + juce::String (proc.getLatencySamples()) + " samples at 48 kHz / Medium");
+        check (proc.getLatencySamples() == 4096 + 512, "latency = " + juce::String (proc.getLatencySamples()) + " samples at 48 kHz / Medium");
 
         BandSnapshot snap; proc.snapshotBands (snap);
         for (float f : { 100.0f, 300.0f, 1000.0f, 3000.0f, 8000.0f, 15000.0f })
@@ -240,8 +240,90 @@ int main (int argc, char** argv)
         check (near (dl, -6.0f, 0.6f), "dynamic band in linear mode -> " + juce::String (dl, 2) + " dB");
         juce::ignoreUnused (dr);
 
+        // REGRESSION: editing a band in linear mode must not cause dropouts
+        {
+            resetBands (proc);
+            setBand (proc, 0, Bell, 6000.0f, 6.0f, 1.0f);
+            setBand (proc, 1, Bell, 1000.0f, 3.0f, 1.0f);
+            juce::Thread::sleep (100);
+            measure (proc, 1000.0f, -20.0f, 1.0f, 1.0f, 0.5); // settle
+            const float expectedPeak = 0.1f * juce::Decibels::decibelsToGain ((float) juce::Decibels::gainToDecibels (
+                                           responseMatrixAt ([&] { BandSnapshot s; proc.snapshotBands (s); return s; }(), 1000.0, 48000.0).a));
+            juce::AudioBuffer<float> sb (2, 512);
+            double ph = 0.0;
+            float worst = 0.0f;
+            for (int k = 0; k < 300; ++k)
+            {
+                if (k % 7 == 0) // drag-like edits: a far band changes constantly, the 1 kHz band slightly
+                {
+                    setP (proc, pid::band (0, pid::gain), (k % 14 == 0) ? 6.0f : -4.0f);
+                    setP (proc, pid::band (0, pid::freq), 5000.0f + (float) (k * 13 % 3000));
+                }
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = 0.1f * (float) std::sin (ph);
+                    ph += juce::MathConstants<double>::twoPi * 1000.0 / 48000.0;
+                    sb.setSample (0, i, v); sb.setSample (1, i, v);
+                }
+                proc.processBlock (sb, midi);
+                if (k > 20)
+                    worst = juce::jmax (worst, std::abs (juce::Decibels::gainToDecibels (sb.getMagnitude (0, 0, 512) / expectedPeak)));
+                if (k % 7 == 3) juce::Thread::sleep (2); // let the designer keep up, like a real-time host would
+            }
+            check (worst < 0.6f, "no dropouts while editing bands in linear mode (worst block deviation "
+                                    + juce::String (worst, 2) + " dB)");
+        }
+
+        // REGRESSION: switching phase modes fades cleanly (no burst, no long gap, correct afterwards)
+        {
+            resetBands (proc);
+            setBand (proc, 0, Bell, 1000.0f, 6.0f, 1.0f);
+            setP (proc, pid::phase, (float) MinimumPhase);
+            measure (proc, 1000.0f, -20.0f, 1.0f, 1.0f, 0.5);
+            const float steady = 0.2f; // 0.1 * +6 dB
+            juce::AudioBuffer<float> sb (2, 512);
+            double ph = 0.0;
+            float maxPeak = 0.0f;
+            int silentBlocks = 0, firstGood = -1;
+            for (int k = 0; k < 200; ++k)
+            {
+                if (k == 10) setP (proc, pid::phase, (float) LinearPhase);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = 0.1f * (float) std::sin (ph);
+                    ph += juce::MathConstants<double>::twoPi * 1000.0 / 48000.0;
+                    sb.setSample (0, i, v); sb.setSample (1, i, v);
+                }
+                proc.processBlock (sb, midi);
+                const float pk = sb.getMagnitude (0, 0, 512);
+                maxPeak = juce::jmax (maxPeak, pk);
+                if (k > 10 && pk < 0.01f) ++silentBlocks;
+                if (k > 12 && firstGood < 0 && near (pk, steady, 0.004f)) firstGood = k;
+                if (k == 6) juce::Thread::sleep (1);
+                if (k > 10 && k < 40) juce::Thread::sleep (3); // real time-ish so the designer runs
+            }
+            const double gapMs = silentBlocks * 512.0 / 48.0;
+            check (maxPeak < steady * 1.03f, "mode switch: no level burst (max peak " + juce::String (maxPeak, 3) + ")");
+            check (firstGood > 0 && gapMs < 600.0, "mode switch: back to correct output after "
+                                                        + juce::String (gapMs, 0) + " ms of fade/mute");
+
+            // bypass keeps timing: an impulse comes out exactly at the reported latency
+            const int bypassLatency = proc.getLatencySamples();
+            juce::AudioBuffer<float> ib (2, 512);
+            int foundAt = -1;
+            for (int k = 0; k < 20 && foundAt < 0; ++k)
+            {
+                ib.clear();
+                if (k == 0) { ib.setSample (0, 0, 1.0f); ib.setSample (1, 0, 1.0f); }
+                proc.processBlockBypassed (ib, midi);
+                for (int i = 0; i < 512; ++i)
+                    if (ib.getSample (0, i) > 0.5f) { foundAt = k * 512 + i; break; }
+            }
+            check (foundAt == bypassLatency, "bypass delays by the plugin latency (" + juce::String (foundAt) + " vs " + juce::String (bypassLatency) + ")");
+        }
+
         setP (proc, pid::phase, (float) MinimumPhase);
-        warm.clear(); proc.processBlock (warm, midi);
+        for (int k = 0; k < 6; ++k) { warm.clear(); proc.processBlock (warm, midi); }
         check (proc.getLatencySamples() == 0, "back to minimum phase: zero latency");
     }
 

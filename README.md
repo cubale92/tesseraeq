@@ -9,16 +9,16 @@ A 24-band parametric EQ plugin (VST3, plus AU on macOS) built with JUCE 8. It ha
 - **Dynamic EQ.** Any Bell, Shelf or Tilt band can be made dynamic. The band listens to its own frequency region. When that region goes over THRESH, the band moves by up to RANGE dB: a negative range cuts (a de-esser or resonance tamer) and a positive range boosts (upward expansion). Attack and release are global settings.
 - **Phase modes.**
   - *Minimum phase*: zero latency, with smoothed coefficients so you can automate it.
-  - *Linear phase*: the whole EQ, including the M/S matrix, is turned into symmetric FIR filters. These run through partitioned convolution in four paths: L→L, R→L, L→R and R→R. Latency is half the filter length:
+  - *Linear phase*: the whole EQ, including the M/S matrix, is turned into symmetric FIR filters. These run in four paths (L→L, R→L, L→R and R→R) through a custom partitioned convolution engine. All filter versions share one input history, so editing bands while audio plays crossfades smoothly with no dropouts. Latency is half the filter length plus one 512-sample block:
 
     | Quality | FIR length at 44.1/48 kHz | Latency at 48 kHz |
     |---|---|---|
-    | Low | 4096 | 43 ms |
-    | Medium | 8192 | 85 ms |
-    | High | 16384 | 171 ms |
-    | Max | 32768 | 341 ms |
+    | Low | 4096 | 53 ms |
+    | Medium | 8192 | 96 ms |
+    | High | 16384 | 181 ms |
+    | Max | 32768 | 352 ms |
 
-    The FIR length doubles at 88.2/96 kHz. In this mode the dynamic part of a band runs as a matched minimum-phase filter after the FIR, and its detector is delayed so it stays aligned with the audio.
+    The FIR length doubles at 88.2/96 kHz. Switching phase mode or quality fades out, switches, and fades back in once the new filters are primed (about 0.2 s of quiet). Host bypass is delayed by the same latency so the track never jumps in time. In this mode the dynamic part of a band runs as a matched minimum-phase filter after the FIR, and its detector is delayed so it stays aligned with the audio.
 - **Display.** An FFT analyser (post, or pre and post) with a 4.5 dB/oct display tilt, a piano strip, a readout of the note under each band, and output meters for L, R, M and S with peak hold.
 
 ## Using it
@@ -54,7 +54,7 @@ cmake --build build
 
 To install on Windows, copy `Tessera EQ.vst3` into `C:\Program Files\Common Files\VST3\` and rescan plugins in your DAW.
 
-**CI:** `.github/workflows/build.yml` runs the tests on Linux and builds the Windows VST3 and the macOS VST3/AU on every push. You can download the plugins from the run's **Artifacts** section.
+**CI:** `.github/workflows/build.yml` runs on every push. It builds the plugin on Windows, macOS and Linux, runs the test suite on Windows and Linux, and runs `pluginval` (strictness 10) against the actual Windows, macOS and Linux binaries. You can download the plugins from the run's **Artifacts** section.
 
 ## Tests
 
@@ -64,6 +64,7 @@ To install on Windows, copy `Tessera EQ.vst3` into `C:\Program Files\Common File
 - Min-phase gains, plus Side-only and Left-only routing.
 - Dynamic EQ threshold and range.
 - That the linear-phase response matches the design at six frequencies, has the right latency, and has a symmetric impulse response.
+- That editing bands in linear phase causes no dropouts, that switching phase modes fades cleanly with no level jump, and that bypass keeps the latency.
 - Saving and restoring state.
 - CPU use.
 - 400 blocks of random automation at 44.1 to 192 kHz with no NaNs.

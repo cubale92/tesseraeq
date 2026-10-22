@@ -48,7 +48,9 @@ public:
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
+    using AudioProcessor::processBlockBypassed;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -153,8 +155,20 @@ private:
     std::vector<float> scratchA, scratchB, analyserScratch;
 
     std::atomic<double> currentSampleRate { 44100.0 };
-    int lastPhaseMode = -1;
     int lastReportedLatency = -1;
+
+    // Phase-mode / quality transitions: fade out, switch, wait for the new path to be valid, fade in.
+    enum class Transition { running, fadingOut, waiting, fadingIn };
+    Transition transition = Transition::running;
+    int activePhase = -1, activeQuality = -1;
+    float transitionGain = 1.0f;
+    int waitSamples = 0;
+    bool waitingForFilters = false;
+    void switchMode (int phase, int quality) noexcept;
+    void applyTransitionGain (float* const* chans, int numChans, int num) noexcept;
+
+    juce::AudioBuffer<float> bypassDelay;     // keeps timing when the host bypasses us in linear mode
+    int bypassWrite = 0;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGain;
 
     static constexpr int subBlock = 32;
