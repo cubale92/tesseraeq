@@ -15,6 +15,17 @@ jobs:
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Check the plugin needs no extra runtime DLLs
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter dumpbin.exe | Where-Object { $_.FullName -like '*Hostx64\x64*' } | Select-Object -First 1
+          $dll = Get-ChildItem -Recurse "build\TesseraEQ_artefacts\Release\VST3" -Filter "*.vst3" -File | Select-Object -First 1
+          Write-Output "Binary: $($dll.FullName)"
+          $deps = & $dumpbin.FullName /dependents $dll.FullName
+          $deps | Write-Output
+          $bad = $deps | Select-String -Pattern 'VCRUNTIME|MSVCP|ucrtbased|api-ms-win-crt'
+          if ($bad) { $bad | ForEach-Object { Write-Output "::error::Plugin depends on $($_.Line.Trim())" }; exit 1 }
+          Write-Output "::notice::Plugin only depends on DLLs that ship with Windows"
       - name: Run tests
         run: '& "build/TesseraTests_artefacts/Release/TesseraTests.exe" "$env:RUNNER_TEMP\tessera-windows.png"'
       - name: pluginval

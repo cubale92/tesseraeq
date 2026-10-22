@@ -5,6 +5,10 @@ project(TesseraEQ VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Windows: link the Visual C++ runtime statically, so the plugin loads on PCs that
+# don't have the "Microsoft Visual C++ Redistributable" installed.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 option(TESSERA_BUILD_TESTS "Build the offline DSP test runner" ON)
 set(TESSERA_FORMATS "VST3" CACHE STRING "Plugin formats to build (e.g. VST3;Standalone)")
 
