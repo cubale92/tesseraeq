@@ -6,31 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-linux:
-    name: Tests + pluginval (Linux)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb unzip
-      - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build
-      - name: Run tests
-        run: xvfb-run -a ./build/TesseraTests_artefacts/Release/TesseraTests
-      - name: pluginval
-        run: |
-          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip
-          unzip -q pluginval.zip && chmod +x pluginval
-          xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process "build/TesseraEQ_artefacts/Release/VST3/Tessera EQ.vst3" 2>&1 | tee pluginval.log
-          code=${PIPESTATUS[0]}
-          grep -E '!!!|FAILED' pluginval.log | head -8 | sed 's/^/::error::/' || true
-          exit $code
-
   build-windows:
     name: VST3 + tests + pluginval (Windows x64)
     runs-on: windows-2022
@@ -69,8 +44,6 @@ jobs:
 
   build-macos:
     name: VST3 + AU + pluginval (macOS universal)
-    # macOS runners are slow to get and cost more on private repos: only run when started by hand
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

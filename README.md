@@ -54,7 +54,7 @@ cmake --build build
 
 To install on Windows, copy `Tessera EQ.vst3` into `C:\Program Files\Common Files\VST3\` and rescan plugins in your DAW.
 
-**CI:** `.github/workflows/build.yml` runs on every push. It builds the plugin on Windows, macOS and Linux, runs the test suite on Windows and Linux, and runs `pluginval` (strictness 10) against the actual Windows, macOS and Linux binaries. You can download the plugins from the run's **Artifacts** section.
+**CI:** `.github/workflows/build.yml` runs on every push. It builds the plugin on Windows and macOS, runs the test suite on Windows, and runs `pluginval` (strictness 10) against the actual Windows and macOS binaries. You can download the plugins from the run's **Artifacts** section.
 
 ## Tests
 
