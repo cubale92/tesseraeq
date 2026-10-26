@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write   # lets the build publish the download page (Releases)
+
 jobs:
   build-windows:
     name: VST3 + tests + pluginval (Windows x64)
@@ -40,6 +43,15 @@ jobs:
           Select-String -Path pluginval.log -Pattern '!!!|FAILED|\*\*\* FAILED|Exception|crash' | Select-Object -First 8 | ForEach-Object { Write-Output "::error::$($_.Line)" }
           Get-Content pluginval.log -Tail 6 | ForEach-Object { if ($_.Trim()) { Write-Output "::warning::$_" } }
           if ($code -ne 0) { exit 1 }
+      - name: Publish Windows download (Releases page)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Compress-Archive -Path "build\TesseraEQ_artefacts\Release\VST3\Tessera EQ.vst3" -DestinationPath "TesseraEQ-Windows-VST3.zip" -Force
+          gh release view latest *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create latest --title "Tessera EQ (latest build)" --notes "Download the zip for your system below, unzip it and copy the plugin into your plugin folder (see the README)." --target $env:GITHUB_SHA }
+          gh release upload latest "TesseraEQ-Windows-VST3.zip" --clobber
       - name: Upload VST3
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,6 +85,17 @@ jobs:
           code=${PIPESTATUS[0]}
           grep -E '!!!|FAILED' pluginval.log | head -8 | sed 's/^/::error::/' || true
           exit $code
+      - name: Publish Mac download (Releases page)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd build/TesseraEQ_artefacts/Release
+          ditto -c -k --keepParent "VST3/Tessera EQ.vst3" "$GITHUB_WORKSPACE/TesseraEQ-Mac-VST3.zip"
+          ditto -c -k --keepParent "AU/Tessera EQ.component" "$GITHUB_WORKSPACE/TesseraEQ-Mac-AU.zip"
+          cd "$GITHUB_WORKSPACE"
+          gh release view latest > /dev/null 2>&1 || gh release create latest --title "Tessera EQ (latest build)" --notes "Download the zip for your system below, unzip it and copy the plugin into your plugin folder (see the README)." --target "$GITHUB_SHA" || true
+          gh release upload latest TesseraEQ-Mac-VST3.zip TesseraEQ-Mac-AU.zip --clobber
       - name: Upload plugins
         uses: actions/upload-artifact@v4
         with:
