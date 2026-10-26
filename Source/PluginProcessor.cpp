@@ -508,6 +508,65 @@ void TesseraProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, j
 }
 
 //==============================================================================
+int TesseraProcessor::getNumPrograms()
+{
+    return (int) factoryPresets().size();
+}
+
+const juce::String TesseraProcessor::getProgramName (int index)
+{
+    const auto& list = factoryPresets();
+    return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String (list[(size_t) index].name) : juce::String();
+}
+
+int TesseraProcessor::getCurrentPresetIndex() const
+{
+    return (int) apvts.state.getProperty ("preset", 0);
+}
+
+void TesseraProcessor::loadPreset (int index)
+{
+    const auto& list = factoryPresets();
+    if (! juce::isPositiveAndBelow (index, (int) list.size()))
+        return;
+    const auto& preset = list[(size_t) index];
+
+    auto set = [this] (const juce::String& id, float value)
+    {
+        if (auto* p = apvts.getParameter (id))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 (value));
+            p->endChangeGesture();
+        }
+    };
+
+    for (int b = 0; b < numBands; ++b)
+    {
+        if (b < (int) preset.bands.size())
+        {
+            const auto& pb = preset.bands[(size_t) b];
+            set (pid::band (b, pid::type), (float) pb.type);
+            set (pid::band (b, pid::freq), pb.freq);
+            set (pid::band (b, pid::gain), pb.gain);
+            set (pid::band (b, pid::q), pb.q);
+            set (pid::band (b, pid::slope), (float) pb.slope);
+            set (pid::band (b, pid::channel), (float) pb.channel);
+            set (pid::band (b, pid::dyn), pb.dyn ? 1.0f : 0.0f);
+            set (pid::band (b, pid::thresh), pb.thresh);
+            set (pid::band (b, pid::range), pb.range);
+            set (pid::band (b, pid::on), 1.0f);
+        }
+        else
+        {
+            set (pid::band (b, pid::on), 0.0f);
+            set (pid::band (b, pid::dyn), 0.0f);
+        }
+    }
+    set (pid::output, preset.outputDb);
+    apvts.state.setProperty ("preset", index, nullptr);
+}
+
 void TesseraProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
@@ -518,7 +577,19 @@ void TesseraProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
+        {
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+            // replaceState skips parameters whose denormalised value is unchanged, which can leave
+            // e.g. a switch sitting at 0.4 (reads as "off") instead of exactly 0. Snap every one.
+            for (auto* p : getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+                {
+                    const float target = ranged->convertTo0to1 (apvts.getRawParameterValue (ranged->paramID)->load());
+                    if (std::abs (ranged->getValue() - target) > 1.0e-6f)
+                        ranged->setValueNotifyingHost (target);
+                }
+        }
 }
 
 juce::AudioProcessorEditor* TesseraProcessor::createEditor()

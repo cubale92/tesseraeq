@@ -29,6 +29,26 @@ TesseraEditor::TesseraEditor (TesseraProcessor& p)
     phaseBox.setTooltip ("Minimum phase: zero latency. Linear phase: no phase shift, adds latency.");
     qualityBox.setTooltip ("Linear-phase filter length: longer = better low-frequency accuracy, more latency");
 
+    buildPresetMenu();
+    presetBox.setTooltip ("Factory presets");
+    presetBox.onChange = [this]
+    {
+        const int index = presetBox.getSelectedId() - 1;
+        if (index >= 0)
+        {
+            processor.loadPreset (index);
+            shownPreset = index;
+            selectedBand = -1;
+        }
+    };
+    prevPreset.setTooltip ("Previous preset");
+    nextPreset.setTooltip ("Next preset");
+    prevPreset.onClick = [this] { stepPreset (-1); };
+    nextPreset.onClick = [this] { stepPreset (1); };
+    addAndMakeVisible (presetBox);
+    addAndMakeVisible (prevPreset);
+    addAndMakeVisible (nextPreset);
+
     latencyLabel.setFont (TesseraLookAndFeel::uiFont (11.0f));
     latencyLabel.setColour (juce::Label::textColourId, colours::textDim);
     latencyLabel.setJustificationType (juce::Justification::centredRight);
@@ -42,8 +62,8 @@ TesseraEditor::TesseraEditor (TesseraProcessor& p)
     setLookAndFeel (&lnf);
 
     setResizable (true, true);
-    setResizeLimits (980, 620, 2400, 1500);
-    setSize (1200, 720);
+    setResizeLimits (1100, 620, 2400, 1500);
+    setSize (1280, 720);
     startTimerHz (8);
 }
 
@@ -52,15 +72,55 @@ TesseraEditor::~TesseraEditor()
     setLookAndFeel (nullptr);
 }
 
+void TesseraEditor::buildPresetMenu()
+{
+    presetBox.clear (juce::dontSendNotification);
+    juce::String lastCategory;
+    const auto& list = factoryPresets();
+    for (size_t i = 0; i < list.size(); ++i)
+    {
+        const juce::String category (list[i].category);
+        if (category != lastCategory)
+        {
+            if (lastCategory.isNotEmpty())
+                presetBox.addSeparator();
+            presetBox.addSectionHeading (category);
+            lastCategory = category;
+        }
+        presetBox.addItem (list[i].name, (int) i + 1);
+    }
+    shownPreset = processor.getCurrentPresetIndex();
+    presetBox.setSelectedId (shownPreset + 1, juce::dontSendNotification);
+}
+
+void TesseraEditor::stepPreset (int delta)
+{
+    const int n = (int) factoryPresets().size();
+    const int next = ((juce::jmax (0, processor.getCurrentPresetIndex()) + delta) % n + n) % n;
+    processor.loadPreset (next);
+    shownPreset = next;
+    presetBox.setSelectedId (next + 1, juce::dontSendNotification);
+    selectedBand = -1;
+}
+
 void TesseraEditor::timerCallback()
 {
+    // follow preset changes made by the host (program change) or by loading a session
+    const int current = processor.getCurrentPresetIndex();
+    if (current != shownPreset)
+    {
+        shownPreset = current;
+        presetBox.setSelectedId (current + 1, juce::dontSendNotification);
+    }
+
     const bool linear = phaseBox.getSelectedItemIndex() == LinearPhase;
     qualityBox.setEnabled (linear);
     const int lat = processor.getLatencySamples();
     const double sr = processor.getCurrentSampleRate();
     latencyLabel.setText (lat == 0 ? juce::String ("Latency 0 ms")
-                                   : "Latency " + juce::String (1000.0 * lat / sr, 1) + " ms (" + juce::String (lat) + " smp)",
+                                   : "Latency " + juce::String (1000.0 * lat / sr, 0) + " ms",
                           juce::dontSendNotification);
+    latencyLabel.setTooltip (juce::String (lat) + " samples");
 }
 
 void TesseraEditor::paint (juce::Graphics& g)
@@ -94,6 +154,13 @@ void TesseraEditor::resized()
     auto r = getLocalBounds();
     auto header = r.removeFromTop (40).reduced (10, 8);
     header.removeFromLeft (160);
+
+    prevPreset.setBounds (header.removeFromLeft (24));
+    header.removeFromLeft (3);
+    presetBox.setBounds (header.removeFromLeft (230));
+    header.removeFromLeft (3);
+    nextPreset.setBounds (header.removeFromLeft (24));
+    header.removeFromLeft (18);
 
     auto place = [&header] (juce::Label& l, juce::ComboBox& b, int labelW, int boxW)
     {

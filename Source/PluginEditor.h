@@ -20,10 +20,16 @@ public:
 
 private:
     void timerCallback() override;
+    void buildPresetMenu();
+    void stepPreset (int delta);
 
     TesseraProcessor& processor;
     TesseraLookAndFeel lnf;
     juce::Value selectedBand { juce::var (-1) };
+
+    juce::ComboBox presetBox;
+    juce::TextButton prevPreset { "<" }, nextPreset { ">" };
+    int shownPreset = -1;
 
     juce::ComboBox phaseBox, qualityBox, rangeBox, analyserBox;
     juce::Label phaseLabel, qualityLabel, rangeLabel, analyserLabel, latencyLabel;

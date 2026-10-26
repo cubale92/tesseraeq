@@ -327,6 +327,77 @@ int main (int argc, char** argv)
         check (proc.getLatencySamples() == 0, "back to minimum phase: zero latency");
     }
 
+    std::cout << "Factory presets" << std::endl;
+    {
+        const auto& list = factoryPresets();
+        check (proc.getNumPrograms() == (int) list.size() && list.size() >= 30,
+               juce::String ((int) list.size()) + " presets, exposed to the host as programs");
+        int bad = 0;
+        juce::String problems;
+        for (int i = 0; i < (int) list.size(); ++i)
+        {
+            const auto& pr = list[(size_t) i];
+            if (pr.bands.size() > (size_t) numBands) { ++bad; problems << pr.name << " (too many bands) "; continue; }
+            proc.setCurrentProgram (i);
+            // every value must survive the parameter ranges exactly (no silent clamping)
+            for (int b = 0; b < (int) pr.bands.size(); ++b)
+            {
+                const auto& pb = pr.bands[(size_t) b];
+                auto raw = [&] (const char* n) { return proc.apvts.getRawParameterValue (pid::band (b, n))->load(); };
+                const bool ok = (int) raw (pid::type) == pb.type && near (raw (pid::freq), pb.freq, pb.freq * 0.001f)
+                             && near (raw (pid::gain), pb.gain, 0.011f) && near (raw (pid::q), pb.q, pb.q * 0.001f)
+                             && (int) raw (pid::channel) == pb.channel && raw (pid::on) > 0.5f
+                             && (raw (pid::dyn) > 0.5f) == pb.dyn;
+                if (! ok) { ++bad; problems << pr.name << " band " << (b + 1) << " "; }
+            }
+            for (int b = (int) pr.bands.size(); b < numBands; ++b)
+                if (proc.apvts.getRawParameterValue (pid::band (b, pid::on))->load() > 0.5f) { ++bad; problems << pr.name << " leftover band "; }
+            if (proc.getCurrentProgram() != i || proc.getProgramName (i) != juce::String (pr.name)) { ++bad; problems << pr.name << " program index "; }
+
+            // sanity: pink-ish noise through the preset stays finite and within +/-12 dB of the input level
+            juce::Random rnd (i + 1);
+            juce::AudioBuffer<float> nb (2, 512); juce::MidiBuffer midi;
+            double inE = 0.0, outE = 0.0;
+            for (int k = 0; k < 60; ++k)
+            {
+                for (int s = 0; s < 512; ++s) { const float v = (rnd.nextFloat() - 0.5f) * 0.3f; nb.setSample (0, s, v); nb.setSample (1, s, v); }
+                if (k >= 20) for (int s = 0; s < 512; ++s) inE += (double) nb.getSample (0, s) * nb.getSample (0, s);
+                proc.processBlock (nb, midi);
+                for (int s = 0; s < 512; ++s)
+                {
+                    const float v = nb.getSample (0, s);
+                    if (! std::isfinite (v)) { ++bad; problems << pr.name << " NaN "; k = 60; break; }
+                    if (k >= 20) outE += (double) v * v;
+                }
+            }
+            const double changeDb = 10.0 * std::log10 (juce::jmax (1.0e-12, outE) / juce::jmax (1.0e-12, inE));
+            if (std::abs (changeDb) > 12.0 && juce::String (pr.category) != "Utility" && ! juce::String (pr.name).contains ("Filtered"))
+            { ++bad; problems << pr.name << " level " << juce::String (changeDb, 1) << " dB "; }
+        }
+        check (bad == 0, "every preset loads exactly, processes cleanly" + (bad ? ": " + problems : juce::String()));
+
+        // spot checks that presets do what their names say
+        auto indexOf = [&] (const char* name)
+        {
+            for (int i = 0; i < (int) list.size(); ++i) if (juce::String (list[(size_t) i].name) == name) return i;
+            return -1;
+        };
+        proc.setCurrentProgram (indexOf ("BB Filtered Bass (Low Pass Loop)"));
+        auto [fl, fr] = measure (proc, 2000.0f, -20.0f, 1.0f, 1.0f, 0.6);
+        check (fl < -40.0f, "BB Filtered Bass removes 2 kHz (" + juce::String (fl, 1) + " dB)");
+        juce::ignoreUnused (fr);
+        proc.setCurrentProgram (indexOf ("Mono Lows (Side cut 120 Hz)"));
+        auto [ml, mr] = measure (proc, 50.0f, -20.0f, 1.0f, 1.0f, 0.6);
+        auto [sl, sr2] = measure (proc, 50.0f, -20.0f, 1.0f, -1.0f, 0.6);
+        check (near (ml, 0.0f, 0.2f) && sl < -12.0f, "Mono Lows keeps mid lows, cuts side lows (mid " + juce::String (ml, 1)
+                                                         + " dB, side " + juce::String (sl, 1) + " dB)");
+        juce::ignoreUnused (mr, sr2);
+        proc.setCurrentProgram (0);
+        bool allOff = true;
+        for (int b = 0; b < numBands; ++b) allOff &= proc.apvts.getRawParameterValue (pid::band (b, pid::on))->load() < 0.5f;
+        check (allOff, "Init preset clears all bands");
+    }
+
     std::cout << "State" << std::endl;
     {
         resetBands (proc);
@@ -418,20 +489,10 @@ int main (int argc, char** argv)
     if (argc > 1)
     {
         std::cout << "Editor snapshot" << std::endl;
-        resetBands (proc);
-        setBand (proc, 0, LowCut, 32.0f, 0.0f, 0.8f, Stereo, 3);
-        setBand (proc, 1, Bell, 120.0f, 3.5f, 1.1f);
-        setBand (proc, 2, Bell, 420.0f, -4.0f, 2.2f);
-        setBand (proc, 3, Bell, 2600.0f, 2.5f, 1.4f, Mid);
-        setBand (proc, 4, HighShelf, 9000.0f, 3.0f, 0.7f, Side);
-        setBand (proc, 5, Notch, 6200.0f, 0.0f, 8.0f);
-        setBand (proc, 6, Bell, 1200.0f, 0.0f, 1.5f);
-        setP (proc, pid::band (6, pid::dyn), 1.0f);
-        setP (proc, pid::band (6, pid::thresh), -36.0f);
-        setP (proc, pid::band (6, pid::range), -5.0f);
-
+        for (int i = 0; i < proc.getNumPrograms(); ++i)
+            if (proc.getProgramName (i) == "NJS Master - Shiny 1990") proc.setCurrentProgram (i);
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
-        ed->setSize (1200, 720);
+        ed->setSize (1280, 720);
 
         // feed pink-ish noise so the analyser and meters have something to show
         juce::Random rnd (42);

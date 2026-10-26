@@ -21,6 +21,17 @@ A 24-band parametric EQ plugin (VST3, plus AU on macOS) built with JUCE 8. It ha
     The FIR length doubles at 88.2/96 kHz. Switching phase mode or quality fades out, switches, and fades back in once the new filters are primed (about 0.2 s of quiet). Host bypass is delayed by the same latency so the track never jumps in time. In this mode the dynamic part of a band runs as a matched minimum-phase filter after the FIR, and its detector is delayed so it stays aligned with the audio.
 - **Display.** An FFT analyser (post, or pre and post) with a 4.5 dB/oct display tilt, a piano strip, a readout of the note under each band, and output meters for L, R, M and S with peak hold.
 
+## Presets
+
+37 factory presets, chosen from the **<  preset  >** menu in the header. They also appear in your DAW's own preset/program list. Loading a preset sets the bands and output gain, and keeps your phase mode and display settings.
+
+- **90s NY Boom Bap (15):** kicks (Knock, Dusty Sub), snares (Crack, Fat Backbeat), crunchy hats, drum buses (SP Dust, Basement Punch), vinyl sample chops, the low-pass "filtered bassline" loop, jazz upright bass, horn stabs, rap vocals (Upfront, Gritty Mic), scratches, and a "1994" master.
+- **New Jack Swing (12):** machine-punch kick, gated and big-room snares, bright hats, swing drum bus, FM slap and round sub synth basses, DX-style stabs and keys, electric piano, silky lead vocal, airy background stacks, and a "Shiny 1990" master.
+- **Utility (9):** rumble cut, mono lows, mud remover, air lift, dynamic de-esser, telephone, AM radio/lo-fi, warm and bright tilts.
+- **Init (Flat)** clears every band.
+
+Presets are starting points: drag the nodes to fit your sample.
+
 ## Using it
 
 | Action | How |

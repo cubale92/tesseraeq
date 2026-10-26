@@ -5,6 +5,7 @@
 #include "Parameters.h"
 #include "FilterDesign.h"
 #include "LinearPhaseEngine.h"
+#include "Presets.h"
 
 namespace tessera
 {
@@ -61,11 +62,16 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // Factory presets are exposed as programs, so hosts (e.g. MPC) list them too.
+    int getNumPrograms() override;
+    int getCurrentProgram() override { return getCurrentPresetIndex(); }
+    void setCurrentProgram (int index) override { loadPreset (index); }
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
+
+    /** Loads a factory preset (bands + output gain; phase mode and display are kept). */
+    void loadPreset (int index);
+    int getCurrentPresetIndex() const;
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
