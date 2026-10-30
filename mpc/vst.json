@@ -1,0 +1,13 @@
+{
+  "name": "Tessera EQ",
+  "vendor": "8cee",
+  "uid": "Tsq1",
+  "version": 1000,
+  "so": "tessera_eq.so",
+  "effect": true,
+  "params": "params.json",
+  "layout": "layout.conf",
+  "presets": "presets.json",
+  "targets": ["armv7", "aarch64"],
+  "build": {"root": "..", "sources": ["mpc/engine.c"], "cflags": [], "libs": ["-lm"]}
+}

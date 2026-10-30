@@ -103,3 +103,46 @@ jobs:
           path: |
             build/TesseraEQ_artefacts/Release/VST3/
             build/TesseraEQ_artefacts/Release/AU/
+
+  build-mpc:
+    name: MPC OS VST2 (armv7 Gen1/Force + aarch64 Gen2)
+    runs-on: ubuntu-24.04
+    env:
+      MPC_VST: ${{ github.workspace }}/../mpc-vst-plugins
+      MPC_VST_SHA: adc48a35e8e190cd4c7a1adb20da5a4cce2fdea4   # sd88me/mpc-vst-plugins, pinned
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Get the MPC VST toolkit (pinned commit)
+        run: |
+          git clone https://github.com/sd88me/mpc-vst-plugins "$MPC_VST"
+          git -C "$MPC_VST" checkout --quiet "$MPC_VST_SHA"
+      - name: Offline host test (x86, ASan)
+        run: '"$MPC_VST/tools/test_port.sh" mpc/vst.json'
+      - name: DSP accuracy tests
+        run: |
+          gcc -O1 -g -fsanitize=address,undefined -I"$MPC_VST/wrapper" -Impc/build mpc/tests/test_engine.c mpc/engine.c -lm -o mpc/build/test_engine
+          ./mpc/build/test_engine
+      - name: Build for the device (armv7 + aarch64)
+        run: '"$MPC_VST/tools/build_port.sh" mpc/vst.json all'
+      - name: Package installer zips
+        run: |
+          VER=$(python3 -c "import json;v=json.load(open('mpc/vst.json'))['version'];print('%d.%d.%d'%(v//1000,v%1000//100,v%100//10))")
+          for so in mpc/build/tessera_eq.so mpc/build/aarch64/tessera_eq.so; do
+            python3 "$MPC_VST/tools/release.py" --so "$so" --skin "mpc/build/skin/8cee - VST - Tessera EQ" \
+              --entry mpc/build/pluginlist-entry.xml --version "$VER" \
+              --about "8-band EQ with mid/side and dynamic EQ, boom bap and new jack swing presets." -o dist
+          done
+          ls -l dist
+      - name: Publish MPC downloads (Releases page)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest > /dev/null 2>&1 || gh release create latest --title "Tessera EQ (latest build)" --notes "Download the zip for your system below." --target "$GITHUB_SHA" || true
+          gh release upload latest dist/*.zip --clobber
+      - name: Upload MPC zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: TesseraEQ-MPC
+          path: dist/*.zip

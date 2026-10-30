@@ -1,0 +1,813 @@
+{
+ "name": "Tessera EQ",
+ "params": [
+  {
+   "key": "out",
+   "name": "Output",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "attack",
+   "name": "Dyn Attack",
+   "min": 0.5,
+   "max": 100.0,
+   "default": 5.0,
+   "unit": "ms"
+  },
+  {
+   "key": "release",
+   "name": "Dyn Release",
+   "min": 10.0,
+   "max": 1000.0,
+   "default": 120.0,
+   "unit": "ms"
+  },
+  {
+   "key": "b1_on",
+   "name": "B1 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b1_type",
+   "name": "B1 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b1_freq",
+   "name": "B1 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.05,
+   "dynamic_display": true
+  },
+  {
+   "key": "b1_gain",
+   "name": "B1 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b1_q",
+   "name": "B1 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b1_slope",
+   "name": "B1 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b1_ch",
+   "name": "B1 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b1_dyn",
+   "name": "B1 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b1_thr",
+   "name": "B1 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b1_rng",
+   "name": "B1 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b2_on",
+   "name": "B2 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b2_type",
+   "name": "B2 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b2_freq",
+   "name": "B2 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.17857,
+   "dynamic_display": true
+  },
+  {
+   "key": "b2_gain",
+   "name": "B2 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b2_q",
+   "name": "B2 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b2_slope",
+   "name": "B2 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b2_ch",
+   "name": "B2 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b2_dyn",
+   "name": "B2 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b2_thr",
+   "name": "B2 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b2_rng",
+   "name": "B2 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b3_on",
+   "name": "B3 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b3_type",
+   "name": "B3 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b3_freq",
+   "name": "B3 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.30714,
+   "dynamic_display": true
+  },
+  {
+   "key": "b3_gain",
+   "name": "B3 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b3_q",
+   "name": "B3 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b3_slope",
+   "name": "B3 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b3_ch",
+   "name": "B3 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b3_dyn",
+   "name": "B3 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b3_thr",
+   "name": "B3 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b3_rng",
+   "name": "B3 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b4_on",
+   "name": "B4 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b4_type",
+   "name": "B4 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b4_freq",
+   "name": "B4 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.43571,
+   "dynamic_display": true
+  },
+  {
+   "key": "b4_gain",
+   "name": "B4 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b4_q",
+   "name": "B4 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b4_slope",
+   "name": "B4 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b4_ch",
+   "name": "B4 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b4_dyn",
+   "name": "B4 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b4_thr",
+   "name": "B4 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b4_rng",
+   "name": "B4 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b5_on",
+   "name": "B5 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b5_type",
+   "name": "B5 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b5_freq",
+   "name": "B5 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.56429,
+   "dynamic_display": true
+  },
+  {
+   "key": "b5_gain",
+   "name": "B5 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b5_q",
+   "name": "B5 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b5_slope",
+   "name": "B5 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b5_ch",
+   "name": "B5 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b5_dyn",
+   "name": "B5 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b5_thr",
+   "name": "B5 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b5_rng",
+   "name": "B5 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b6_on",
+   "name": "B6 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b6_type",
+   "name": "B6 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b6_freq",
+   "name": "B6 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.69286,
+   "dynamic_display": true
+  },
+  {
+   "key": "b6_gain",
+   "name": "B6 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b6_q",
+   "name": "B6 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b6_slope",
+   "name": "B6 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b6_ch",
+   "name": "B6 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b6_dyn",
+   "name": "B6 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b6_thr",
+   "name": "B6 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b6_rng",
+   "name": "B6 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b7_on",
+   "name": "B7 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b7_type",
+   "name": "B7 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b7_freq",
+   "name": "B7 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.82143,
+   "dynamic_display": true
+  },
+  {
+   "key": "b7_gain",
+   "name": "B7 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b7_q",
+   "name": "B7 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b7_slope",
+   "name": "B7 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b7_ch",
+   "name": "B7 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b7_dyn",
+   "name": "B7 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b7_thr",
+   "name": "B7 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b7_rng",
+   "name": "B7 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b8_on",
+   "name": "B8 On",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b8_type",
+   "name": "B8 Type",
+   "options": [
+    "Bell",
+    "Low Shelf",
+    "High Shelf",
+    "Low Cut",
+    "High Cut",
+    "Notch",
+    "Band Pass",
+    "Tilt"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b8_freq",
+   "name": "B8 Freq",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.95,
+   "dynamic_display": true
+  },
+  {
+   "key": "b8_gain",
+   "name": "B8 Gain",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b8_q",
+   "name": "B8 Q",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.44341,
+   "dynamic_display": true
+  },
+  {
+   "key": "b8_slope",
+   "name": "B8 Slope",
+   "options": [
+    "-6 dB",
+    "-12 dB",
+    "-18 dB",
+    "-24 dB",
+    "-36 dB",
+    "-48 dB"
+   ],
+   "default": 3
+  },
+  {
+   "key": "b8_ch",
+   "name": "B8 Channel",
+   "options": [
+    "Stereo",
+    "Mid",
+    "Side",
+    "Left",
+    "Right"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b8_dyn",
+   "name": "B8 Dynamic",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": 0
+  },
+  {
+   "key": "b8_thr",
+   "name": "B8 Threshold",
+   "min": -60.0,
+   "max": 0.0,
+   "default": -24.0,
+   "unit": "dB"
+  },
+  {
+   "key": "b8_rng",
+   "name": "B8 Range",
+   "min": -24.0,
+   "max": 24.0,
+   "default": -6.0,
+   "unit": "dB"
+  }
+ ]
+}

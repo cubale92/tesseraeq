@@ -21,6 +21,25 @@ A 24-band parametric EQ plugin (VST3, plus AU on macOS) built with JUCE 8. It ha
     The FIR length doubles at 88.2/96 kHz. Switching phase mode or quality fades out, switches, and fades back in once the new filters are primed (about 0.2 s of quiet). Host bypass is delayed by the same latency so the track never jumps in time. In this mode the dynamic part of a band runs as a matched minimum-phase filter after the FIR, and its detector is delayed so it stays aligned with the audio.
 - **Display.** An FFT analyser (post, or pre and post) with a 4.5 dB/oct display tilt, a piano strip, a readout of the note under each band, and output meters for L, R, M and S with peak hold.
 
+## MPC edition (standalone MPC / Force)
+
+`mpc/` holds a separate build that runs **inside MPC OS** on standalone MPCs and the Force: a native VST2 for the built-in plugin
+host, made with [sd88me/mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins). MPC can't show a plugin's own window, so this
+edition has a touchscreen skin instead of the curve display:
+
+- **8 bands** (pages BANDS 1-2 … 7-8): on/off, type, channel (stereo/mid/side/left/right), freq, gain, Q, slope (cut types), dynamic on/off, threshold, range.
+- **OUTPUT** page: output trim, dynamic attack and release.
+- **All 37 presets** in MPC's PRESET menu (generated from `Source/Presets.h`).
+- Q-Links: on each page, both bands' freq/gain/Q/threshold/range/type/channel/on; in track mode, bank 1 = all gains, bank 2 = all frequencies.
+- Minimum phase only (no linear-phase mode), 44.1 kHz.
+
+Downloads: `Tessera-EQ-<version>-mpc-armv7.zip` for Gen1 MPCs (Live, Live II, One, X) and the Force,
+`-mpc-aarch64.zip` for Gen2 (e.g. Live III). Installing needs SSH access to the MPC; the toolkit's desktop installer app
+(browser page, no typing) can install the zip. See the zip's `INSTALL.md`.
+
+Rebuild the generated files after changing presets or the layout: `python3 mpc/gen.py`. Never reorder `mpc/params.json`
+(saved projects store values by index; `mpc/params.lock` enforces it).
+
 ## Presets
 
 37 factory presets, chosen from the **<  preset  >** menu in the header. They also appear in your DAW's own preset/program list. Loading a preset sets the bands and output gain, and keeps your phase mode and display settings.
